@@ -1,0 +1,28 @@
+{
+  "name": "hammurabi",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "An accounting engine",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "Accounting",
+    "Finance",
+    "Dtock"
+  ],
+  "author": "Sleipnir",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsc": "^2.0.4",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "uuid": "^14.0.0"
+  }
+}
