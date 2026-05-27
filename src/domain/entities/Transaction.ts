@@ -13,8 +13,6 @@ export default class Transaction {
     this.description = description;
     this.entries = entries;
     this.validateValues();
-    // Make the transaction immutable after validation
-    Object.freeze(this);
   }
   readonly uuid: string;
   readonly timestamp: Date;
