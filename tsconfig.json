@@ -40,5 +40,8 @@
     "skipLibCheck": true,
     "rewriteRelativeImportExtensions": true,
     "allowImportingTsExtensions": true
-  }
+
+  },
+  "include": ["src"],
+  "exclude": ["tests/"]
 }

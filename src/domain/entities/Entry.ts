@@ -33,21 +33,45 @@ export default class Entry {
   }
 
   validateConceptAndQuantity() {
-    if (this.conceptId && !this.quantity)
+    // Treat quantity of 0 as "not provided" for pairing logic
+    const quantityDefined = this.quantity !== undefined && this.quantity !== 0;
+    const conceptDefined = this.conceptId !== undefined;
+
+    if (conceptDefined && !quantityDefined) {
       throw new Error("Quantity is required when concept ID is provided");
-    if (this.quantity && !this.conceptId)
+    }
+    if (quantityDefined && !conceptDefined) {
       throw new Error("Concept ID is required when quantity is provided");
-    if (this.conceptId && !assertions.numbers.assertPositive(this.quantity))
-      throw new Error(
-        "Quantity must be a positive number when concept ID is provided",
-      );
+    }
+    if (conceptDefined && quantityDefined) {
+      if (
+        !assertions.numbers.assertFinite(this.quantity) ||
+        this.quantity === 0
+      ) {
+        throw new Error(
+          "Quantity must be a non-zero number when concept ID is provided",
+        );
+      }
+    }
   }
   validateValues() {
-    if (!assertions.numbers.assertNonNegative(this.amount))
-      throw new Error("Amount must be a positive number");
-    if (!assertions.numbers.assertNonNegative(this.accountId))
-      throw new Error("Account ID must be a positive number");
-    if (this.id && !assertions.numbers.assertNonNegative(this.id))
-      throw new Error("Entry ID must be a positive number");
+    if (!assertions.numbers.assertFinite(this.amount) || this.amount === 0) {
+      throw new Error("Amount must be a finite number and non-zero");
+    }
+    if (!assertions.numbers.assertNonNegative(this.accountId)) {
+      throw new Error("Account ID must be a non-negative number");
+    }
+    if (
+      this.id !== undefined &&
+      !assertions.numbers.assertNonNegative(this.id)
+    ) {
+      throw new Error("Entry ID must be a non-negative number");
+    }
+    if (
+      this.quantity !== undefined &&
+      !assertions.numbers.assertFinite(this.quantity)
+    ) {
+      throw new Error("Quantity must be a finite number");
+    }
   }
 }

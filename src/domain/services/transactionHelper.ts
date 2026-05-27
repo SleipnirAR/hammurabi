@@ -43,19 +43,13 @@ export default class TransactionHelper {
     conceptId,
     quantity = 0,
   }: TransferInput): Promise<[Entry, Entry]> {
-    if (amount <= 0) {
-      throw new Error("Transaction amount must be a positive number");
-    }
-
     const [fromAccount, toAccount] = await Promise.all([
       this.accountRepository.findById(FromId),
       this.accountRepository.findById(ToId),
     ]);
 
-    if (!fromAccount)
-      throw new Error(`Origin account not found: ${FromId}`);
-    if (!toAccount)
-      throw new Error(`Destination account not found: ${ToId}`);
+    if (!fromAccount) throw new Error(`Origin account not found: ${FromId}`);
+    if (!toAccount) throw new Error(`Destination account not found: ${ToId}`);
 
     const fromNature = this.getNature(fromAccount.type);
     const fromAmount = fromNature === Nature.Debit ? -amount : amount;
@@ -68,15 +62,13 @@ export default class TransactionHelper {
     const entryFrom = new Entry({
       accountId: fromAccount.id,
       amount: fromAmount,
-      quantity: fromQty,
-      conceptId,
+      ...(conceptId !== undefined && { quantity: fromQty, conceptId }),
     });
 
     const entryTo = new Entry({
       accountId: toAccount.id,
       amount: toAmount,
-      quantity: toQty,
-      conceptId,
+      ...(conceptId !== undefined && { quantity: toQty, conceptId }),
     });
 
     return [entryFrom, entryTo];
