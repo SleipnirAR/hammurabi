@@ -11,20 +11,14 @@ A TypeScript-based double-entry bookkeeping accounting engine. Hammurabi enforce
 - **Repository Pattern**: Works with any database through simple interface implementations
 - **Singleton Pattern**: Global, configured-once engine instance for easy access throughout your app
 
-## Installation
-
-```bash
-npm install hammurabi
-```
-
 ## Quick Start
 
 ### 1. Set Up Your Database Context
 
-First, implement the `IDbContext` interface with your database repositories:
+Implement the `IDbContext` interface with repositories for transactions and accounts:
 
 ```typescript
-import { IDbContext, ILedgerRepository, IAccountRepository } from "hammurabi";
+import { IDbContext } from "hammurabi";
 
 class MyDbContext implements IDbContext {
   ledgerRepository: ILedgerRepository;
@@ -37,99 +31,107 @@ class MyDbContext implements IDbContext {
 }
 ```
 
-See [REPOSITORY_IMPLEMENTATION.md](./docs/REPOSITORY_IMPLEMENTATION.md) for complete implementation details.
+See [REPOSITORY_IMPLEMENTATION.md](./docs/REPOSITORY_IMPLEMENTATION.md) for implementation details.
 
-### 2. Configure the Engine at App Startup
+### 2. Configure Hammurabi at Startup
 
 ```typescript
 import Hammurabi from "hammurabi";
 
-// In your main application file (e.g., main.ts, app.ts, or index.ts)
 const dbContext = new MyDbContext();
-Hammurabi.configure(dbContext);
+Hammurabi.configure(dbContext);  // Call once at app startup
 ```
 
-**Important**: Call `configure()` once at application startup, before any other code uses Hammurabi.
-
-### 3. Use the Engine
+### 3. Record Transactions Using TransactionHelper
 
 ```typescript
-import Hammurabi, { Entry } from "hammurabi";
+import Hammurabi from "hammurabi";
 
-// Get a ledger instance
+const helper = Hammurabi.getTransactionHelper();
 const ledger = Hammurabi.getLedger();
 
-// Create entries (debits and credits)
-const entries = [
-  new Entry({
-    accountId: 1,        // Debit account
-    amount: 100,
-    conceptId: 1         // Optional: transaction category
-  }),
-  new Entry({
-    accountId: 2,        // Credit account
-    amount: -100,        // Credit amounts are negative
-    conceptId: 1
-  })
-];
+// Transfer money between accounts (most common operation)
+const [fromEntry, toEntry] = await helper.transfer({
+  FromId: 101,      // Cash account
+  ToId: 401,        // Revenue account
+  amount: 1000,
+  conceptId: 1
+});
 
-// Start the transaction (automatically verifies balance)
-ledger.startTransaction("Monthly rent payment", entries);
+// Start transaction
+ledger.startTransaction("Customer payment received", [fromEntry, toEntry]);
 
-// Commit to database
+// Save to database
 await ledger.commit();
 ```
+
+**Note**: `TransactionHelper.transfer()` is the recommended way to record transactions. It handles accounting logic automatically based on account types.
 
 ## Core Concepts
 
 ### Transaction
-An immutable record representing a complete business event. Contains:
-- **Description**: Human-readable summary of the transaction
-- **Entries**: Array of debits and credits
-- **UUID**: Unique identifier
-- **Timestamp**: When the transaction occurred
+An immutable record of a complete business event. Contains:
+- **Description**: Human-readable summary
+- **Entries**: Array of debits and credits that balance to zero
+- **UUID & Timestamp**: Unique identifier and when it occurred
 
 Transactions are **frozen** after creation - they cannot be modified. This ensures audit trail integrity.
 
 ### Entry
-A single debit or credit line within a transaction. Contains:
-- **AccountId**: Which account this entry affects
-- **Amount**: The amount (negative for credits, positive for debits)
-- **ConceptId**: Optional category/classification for the entry
+A single debit or credit in a transaction:
+- **AccountId**: Which account this affects
+- **Amount**: Positive for debits, negative for credits
+- **ConceptId** (optional): Category/classification
+- **Quantity** (optional): For inventory tracking
 
 ### Account
 Represents an account in the chart of accounts. The system uses a hierarchical structure:
 
-**Main Accounts** (5 types defined in AccountType enum):
-- `ASSET`: What you own
-- `LIABILITY`: What you owe
+**5 Main Account Types:**
+- `ASSET`: What you own (cash, inventory, receivables)
+- `LIABILITY`: What you owe (payables, loans)
 - `EQUITY`: Owner's stake
 - `INCOME`: Revenue
 - `EXPENSE`: Costs
 
-**Sub-Accounts**: Any account under a main account inherits its type. For example:
+**Sub-Accounts** inherit their parent's type. For example:
 ```
-├─ ASSET (main, id: 1)
-│  ├─ Cash (sub, id: 101, type: ASSET)
-│  └─ Accounts Receivable (sub, id: 102, type: ASSET)
-├─ LIABILITY (main, id: 2)
-│  └─ Accounts Payable (sub, id: 201, type: LIABILITY)
+ASSET (main, id: 1)
+├─ Cash (sub, id: 101)
+└─ Inventory (sub, id: 102)
+
+EXPENSE (main, id: 2)
+├─ Rent (sub, id: 201)
+└─ Utilities (sub, id: 202)
 ```
 
-Sub-accounts reference their parent account. The repository automatically copies the parent's type.
+### TransactionHelper
+Utility for creating balanced entry pairs. Automatically handles the accounting nature of each account type.
+
+**Main method: `transfer()`**
+```typescript
+// Returns [fromEntry, toEntry] - automatically balanced
+const [fromEntry, toEntry] = await helper.transfer({
+  FromId: 101,          // Source account
+  ToId: 401,            // Destination account
+  amount: 1000,
+  conceptId?: number,   // Optional category
+  quantity?: number     // Optional quantity
+});
+```
 
 ### Ledger
-Manages the lifecycle of a single transaction:
-1. **Start**: Create a new transaction
-2. **Verify**: Ensure debits = credits
-3. **Commit**: Save to the database
+Manages a single transaction lifecycle:
+1. **Start**: Create transaction with balanced entries
+2. **Verify**: Ensure debits = credits (automatic)
+3. **Commit**: Save to database
 4. **Rollback**: Discard if verification fails
 
 ## Next Steps
 
-- **Standard Usage**: See [USAGE.md](./docs/USAGE.md) for detailed API documentation
-- **Implement Repositories**: See [REPOSITORY_IMPLEMENTATION.md](./docs/REPOSITORY_IMPLEMENTATION.md) for database integration patterns
-- **Custom Transactions**: See [CUSTOM_TRANSACTIONS.md](./docs/CUSTOM_TRANSACTIONS.md) to add metadata like user info or location
+- **Complete Guide**: See [USAGE.md](./docs/USAGE.md) - full API documentation and examples
+- **Set Up Repositories**: See [REPOSITORY_IMPLEMENTATION.md](./docs/REPOSITORY_IMPLEMENTATION.md) - database integration
+- **Custom Transactions**: See [CUSTOM_TRANSACTIONS.md](./docs/CUSTOM_TRANSACTIONS.md) - add metadata (user, location, invoice number, etc.)
 
 ## Architecture Overview
 
@@ -148,49 +150,29 @@ DbContext (Your Implementation)
 Your Database
 ```
 
-## Common Workflow
-
-```typescript
-// 1. Initialize (app startup)
-Hammurabi.configure(dbContext);
-
-// 2. Create entries for your business event
-const entries = [
-  new Entry({ accountId: 101, amount: 1000 }),      // Debit
-  new Entry({ accountId: 201, amount: -1000 })      // Credit
-];
-
-// 3. Start a transaction (auto-verified)
-const ledger = Hammurabi.getLedger();
-ledger.startTransaction("Invoice payment", entries);
-
-// 4. Commit to database
-await ledger.commit();
-
-// 5. Transaction is now persisted and immutable
-```
-
 ## Error Handling
 
-Transactions automatically rollback if they don't balance:
+Transactions automatically rollback if they don't balance or encounter errors:
 
 ```typescript
 try {
-  const entries = [
-    new Entry({ accountId: 1, amount: 100 }),
-    new Entry({ accountId: 2, amount: -50 })  // Unbalanced!
-  ];
+  const [fromEntry, toEntry] = await helper.transfer({
+    FromId: 101,
+    ToId: 401,
+    amount: 1000
+  });
   
-  ledger.startTransaction("Bad transaction", entries);
-  // This throws an error and rollback() is called automatically
+  ledger.startTransaction("Payment", [fromEntry, toEntry]);
+  await ledger.commit();
 } catch (error) {
   console.error("Transaction failed:", error.message);
-  // "Transaction is unbalanced: entries do not sum to zero"
+  // Transaction is automatically rolled back
+  // You can start a new transaction with a fresh ledger
 }
 ```
 
 ## Advanced Features
 
-For more advanced usage, see the documentation:
-- **Custom Transactions**: Add metadata fields (user, location, etc.) - see [CUSTOM_TRANSACTIONS.md](./docs/CUSTOM_TRANSACTIONS.md)
-- **Repository Patterns**: Database integration examples - see [REPOSITORY_IMPLEMENTATION.md](./docs/REPOSITORY_IMPLEMENTATION.md)
+For advanced use cases:
+- **Custom Transactions**: Add metadata fields (user, location, invoice number) - see [CUSTOM_TRANSACTIONS.md](./docs/CUSTOM_TRANSACTIONS.md)
+- **Manual Entry Creation**: For fine-grained control when TransactionHelper doesn't fit your use case - see [USAGE.md - Advanced](./docs/USAGE.md#manual-entry-creation-advanced)

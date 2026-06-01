@@ -1,49 +1,28 @@
 # Repository Implementation Guide
 
-This guide explains how to implement the required repository interfaces to persist Hammurabi transactions and accounts to your database.
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Interface Requirements](#interface-requirements)
-3. [IDbContext](#idbcontext)
-4. [ILedgerRepository](#iledgerrepository)
-5. [IAccountRepository](#iaccountrepository)
-6. [Account Hierarchy & Type Assignment](#account-hierarchy--type-assignment)
-7. [ORM Examples](#orm-examples)
-8. [Data Mapping](#data-mapping)
+Implement the required repository interfaces to persist Hammurabi transactions and accounts to your database.
 
 ## Overview
 
-Hammurabi uses the Repository Pattern to decouple business logic from data access. You must implement three interfaces:
+Hammurabi uses the Repository Pattern to decouple business logic from data access. You must implement:
 
 ```
 Your Application
-        ↓
-   Hammurabi Engine
-        ↓
-   Your DbContext (implements IDbContext)
-        ├─ ILedgerRepository (save transactions)
-        └─ IAccountRepository (query accounts)
-        ↓
-   Your Database
+     ↓
+Hammurabi Engine
+     ↓
+Your DbContext (implements IDbContext)
+├─ ILedgerRepository (save transactions & entries)
+└─ IAccountRepository (query accounts)
+     ↓
+Your Database
 ```
 
-## Interface Requirements
+## Interfaces You Need to Implement
 
-### Quick Summary
+### IDbContext
 
-| Interface | Responsibility | Methods |
-|-----------|-----------------|---------|
-| `IDbContext` | Provide repository instances | `ledgerRepository`, `accountRepository` |
-| `ILedgerRepository` | Persist transactions and entries | `saveTransactional(transaction)` |
-| `IAccountRepository` | Query and manage accounts | Up to your implementation |
-
-## IDbContext
-
-The DbContext is your dependency injection point - it provides Hammurabi with access to your repositories.
-
-### Interface Definition
+Provides repository instances to Hammurabi:
 
 ```typescript
 interface IDbContext {
@@ -52,271 +31,139 @@ interface IDbContext {
 }
 ```
 
-### Implementation Example
+**Implementation:**
 
 ```typescript
 import { IDbContext, ILedgerRepository, IAccountRepository } from "hammurabi";
-import { MyLedgerRepository } from "./repositories/MyLedgerRepository";
-import { MyAccountRepository } from "./repositories/MyAccountRepository";
 
 export class MyDbContext implements IDbContext {
   ledgerRepository: ILedgerRepository;
   accountRepository: IAccountRepository;
 
-  constructor() {
-    this.ledgerRepository = new MyLedgerRepository();
-    this.accountRepository = new MyAccountRepository();
-  }
-}
-```
-
-### With Database Connection
-
-```typescript
-export class MyDbContext implements IDbContext {
-  ledgerRepository: ILedgerRepository;
-  accountRepository: IAccountRepository;
-
-  constructor(databaseConnection: Connection) {
+  constructor(databaseConnection: Database) {
     this.ledgerRepository = new MyLedgerRepository(databaseConnection);
     this.accountRepository = new MyAccountRepository(databaseConnection);
   }
 }
 
-// In your app startup
-const dbContext = new MyDbContext(myDatabaseConnection);
+// Use at app startup
+const dbContext = new MyDbContext(myDb);
 Hammurabi.configure(dbContext);
 ```
 
-## ILedgerRepository
+---
 
-Handles persistence of transactions and their entries.
+### ILedgerRepository
 
-### Interface Definition
+Persists transactions and entries atomically.
 
 ```typescript
 interface ILedgerRepository {
   /**
    * Persist a transaction and its entries atomically.
-   * Returns the saved transaction with any database-generated fields (id, etc).
+   * Returns the saved transaction.
    */
   saveTransactional(transaction: Transaction): Promise<Transaction>;
 }
 ```
 
-### Key Responsibilities
+**Responsibilities:**
 
-1. **Save the Transaction**: Store the transaction header (description, uuid, timestamp)
-2. **Save Entries**: Store all entries with their account and amount
-3. **Atomic Operation**: Use a database transaction so either ALL or NOTHING is saved
-4. **Preserve All Fields**: Make sure to save:
-   - Transaction: `uuid`, `timestamp`, `description`
-   - Entry: `accountId`, `amount`, `conceptId`, `quantity`
+1. Save the transaction header (uuid, description, timestamp)
+2. Save all entries (accountId, amount, conceptId, quantity)
+3. Use database transaction for atomicity (all or nothing)
+4. Preserve all fields exactly as they are
 
-### Important: Field Mapping
-
-Hammurabi uses these Transaction fields - **all must be persisted**:
+**Fields to Persist:**
 
 ```typescript
-Transaction {
-  uuid: string;              // Unique identifier (v7 UUID)
-  timestamp: Date;           // When it occurred
-  description: string;       // Human-readable summary
-  entries: Entry[]
-}
+// Transaction
+uuid: string                    // Unique identifier
+description: string            // Human-readable summary
+timestamp: Date               // When it occurred
 
-Entry {
-  id?: number;              // Database ID (generated)
-  accountId: number;        // Required: which account
-  amount: number;           // Required: debit (+) or credit (-)
-  conceptId?: number;       // Optional: category/concept
-  quantity?: number;        // Optional: quantity for the entry
-}
+// Entries
+accountId: number             // Which account
+amount: number                // Debit (+) or credit (-)
+conceptId?: number            // Optional category
+quantity?: number             // Optional quantity
 ```
 
-## IAccountRepository
+---
 
-Handles querying and managing the chart of accounts.
+### IAccountRepository
 
-### Interface Definition
+Your implementation defines the methods you need for querying accounts.
 
-```typescript
-interface IAccountRepository {
-  // Methods depend on your needs
-  // Common operations:
-  // - findById(id: number): Promise<Account>
-  // - findAll(): Promise<Account[]>
-  // - create(account: Account): Promise<Account>
-}
-```
+Common operations:
+- `findById(id: number): Promise<Account>`
+- `findAll(): Promise<Account[]>`
+- `create(account: Account): Promise<Account>`
 
-You define what methods you need. No specific methods are required by Hammurabi core.
+No specific methods are required by Hammurabi. You define what you need.
 
-### Account Hierarchy & Type Assignment
+---
 
-The account system uses a hierarchical structure:
+## Account Hierarchy & Type Assignment
 
-**Main Accounts** (5 types):
-```
-ASSET (id: 1)
-EXPENSE (id: 2)
-LIABILITY (id: 3)
-EQUITY (id: 4)
-INCOME (id: 5)
-```
+Accounts use a hierarchical structure:
+
+**Main Accounts** (5 types, no parent):
+- ASSET (id: 1)
+- EXPENSE (id: 2)
+- LIABILITY (id: 3)
+- EQUITY (id: 4)
+- INCOME (id: 5)
 
 **Sub-Accounts** (children of main accounts):
 ```
 ASSET (id: 1)
 ├─ Cash (id: 101, parentId: 1, type: ASSET)
-├─ Checking (id: 102, parentId: 1, type: ASSET)
-└─ Accounts Receivable (id: 103, parentId: 1, type: ASSET)
+├─ Inventory (id: 102, parentId: 1, type: ASSET)
 
 EXPENSE (id: 2)
 ├─ Rent (id: 201, parentId: 2, type: EXPENSE)
-└─ Utilities (id: 202, parentId: 2, type: EXPENSE)
+├─ Utilities (id: 202, parentId: 2, type: EXPENSE)
 ```
 
-### Type Assignment Rule
-
-When creating or querying an account:
-1. **Main Account**: Has no parent, type is explicit (ASSET, EXPENSE, etc.)
-2. **Sub-Account**: Must assign the parent's type to the sub-account
+**Type Assignment Rule:**
+- **Main Account**: Type is explicit (ASSET, EXPENSE, etc.)
+- **Sub-Account**: Must inherit parent's type
 
 **Example:**
 ```typescript
-// Creating a sub-account
-const mainAccount = await accountRepository.findById(1); // ASSET
+// When creating a sub-account, copy type from parent
+const parent = await accountRepository.findById(1);  // ASSET type
 const subAccount = new Account(
   101,
-  1,                    // parentId
+  1,                // parentId
   "Cash",
-  mainAccount.type      // Copy type from parent (ASSET)
+  parent.type       // Copy ASSET from parent
 );
-await accountRepository.create(subAccount);
 ```
 
-### Query Optimization
+---
 
-Use `parentId` and `type` for faster queries:
+## Implementation Example: Prisma
 
-```typescript
-// Find all ASSET accounts
-const assets = await query()
-  .where("type", "=", AccountType.ASSET)
-  .getAll();
+Here's a complete example using Prisma ORM.
 
-// Find sub-accounts of a main account
-const subAccounts = await query()
-  .where("parentId", "=", 1)
-  .getAll();
-```
+### Schema
 
-## ORM Examples
-
-### Example 1: TypeORM (SQL-based)
-
-```typescript
-import { DataSource, Repository, Entity, Column, PrimaryColumn } from "typeorm";
-import { Transaction, Entry, ILedgerRepository } from "hammurabi";
-
-// Define your entities
-@Entity("transactions")
-class TransactionEntity {
-  @PrimaryColumn("uuid")
-  uuid: string;
-
-  @Column("text")
-  description: string;
-
-  @Column("timestamp")
-  timestamp: Date;
-}
-
-@Entity("entries")
-class EntryEntity {
-  @PrimaryColumn("integer")
-  id: number;
-
-  @Column("integer")
-  transactionId: string;  // Foreign key to transaction uuid
-
-  @Column("integer")
-  accountId: number;
-
-  @Column("decimal")
-  amount: number;
-
-  @Column("integer", { nullable: true })
-  conceptId?: number;
-
-  @Column("integer", { nullable: true })
-  quantity?: number;
-}
-
-// Implement repository
-export class TypeOrmLedgerRepository implements ILedgerRepository {
-  constructor(
-    private transactionRepo: Repository<TransactionEntity>,
-    private entryRepo: Repository<EntryEntity>,
-  ) {}
-
-  async saveTransactional(transaction: Transaction): Promise<Transaction> {
-    return this.transactionRepo.manager.transaction(async (txn) => {
-      // Save transaction
-      const txnEntity = new TransactionEntity();
-      txnEntity.uuid = transaction.uuid;
-      txnEntity.description = transaction.description;
-      txnEntity.timestamp = transaction.timestamp;
-      await txn.save(txnEntity);
-
-      // Save entries
-      for (const entry of transaction.entries) {
-        const entryEntity = new EntryEntity();
-        entryEntity.transactionId = transaction.uuid;
-        entryEntity.accountId = entry.accountId;
-        entryEntity.amount = entry.amount;
-        entryEntity.conceptId = entry.conceptId;
-        entryEntity.quantity = entry.quantity;
-        await txn.save(entryEntity);
-      }
-
-      // Return the saved transaction
-      return transaction;
-    });
-  }
-}
-
-// DbContext setup
-export class TypeOrmDbContext implements IDbContext {
-  ledgerRepository: ILedgerRepository;
-  accountRepository: IAccountRepository;
-
-  constructor(dataSource: DataSource) {
-    const transactionRepo = dataSource.getRepository(TransactionEntity);
-    const entryRepo = dataSource.getRepository(EntryEntity);
-    
-    this.ledgerRepository = new TypeOrmLedgerRepository(transactionRepo, entryRepo);
-    this.accountRepository = new TypeOrmAccountRepository(dataSource);
-  }
-}
-```
-
-### Example 2: Prisma (Schema-based)
-
-```typescript
+```prisma
 // prisma/schema.prisma
+
 model Transaction {
-  uuid          String    @id @default(uuid())
-  description   String
-  timestamp     DateTime
-  entries       Entry[]
+  uuid        String   @id @default(uuid())
+  description String
+  timestamp   DateTime
+  entries     Entry[]
 
   @@map("transactions")
 }
 
 model Entry {
-  id              Int      @id @default(autoincrement())
+  id              Int         @id @default(autoincrement())
   transactionUuid String
   transaction     Transaction @relation(fields: [transactionUuid], references: [uuid], onDelete: Cascade)
   accountId       Int
@@ -326,17 +173,30 @@ model Entry {
 
   @@map("entries")
 }
+
+model Account {
+  id       Int     @id
+  parentId Int?
+  name     String
+  type     String
+  children Account[] @relation("AccountChildren")
+  parent   Account? @relation("AccountChildren", fields: [parentId], references: [id])
+
+  @@map("accounts")
+}
 ```
+
+### Implementation
 
 ```typescript
 import { PrismaClient } from "@prisma/client";
-import { Transaction, Entry, ILedgerRepository } from "hammurabi";
+import { Transaction, Entry, ILedgerRepository, IAccountRepository, IDbContext } from "hammurabi";
 
+// LedgerRepository
 export class PrismaLedgerRepository implements ILedgerRepository {
   constructor(private prisma: PrismaClient) {}
 
   async saveTransactional(transaction: Transaction): Promise<Transaction> {
-    // Use Prisma transaction for atomicity
     await this.prisma.$transaction(async (tx) => {
       // Create transaction record
       await tx.transaction.create({
@@ -362,7 +222,33 @@ export class PrismaLedgerRepository implements ILedgerRepository {
   }
 }
 
-// DbContext setup
+// AccountRepository
+export class PrismaAccountRepository implements IAccountRepository {
+  constructor(private prisma: PrismaClient) {}
+
+  async findById(id: number) {
+    return this.prisma.account.findUnique({
+      where: { id },
+    });
+  }
+
+  async findAll() {
+    return this.prisma.account.findMany();
+  }
+
+  async create(account: Account) {
+    return this.prisma.account.create({
+      data: {
+        id: account.id,
+        parentId: account.parentId,
+        name: account.name,
+        type: account.type,
+      },
+    });
+  }
+}
+
+// DbContext
 export class PrismaDbContext implements IDbContext {
   ledgerRepository: ILedgerRepository;
   accountRepository: IAccountRepository;
@@ -372,104 +258,68 @@ export class PrismaDbContext implements IDbContext {
     this.accountRepository = new PrismaAccountRepository(prisma);
   }
 }
+
+// Usage
+const prisma = new PrismaClient();
+const dbContext = new PrismaDbContext(prisma);
+Hammurabi.configure(dbContext);
 ```
 
-### Example 3: Raw SQL (Query Builder)
+---
+
+## Key Implementation Details
+
+### 1. Atomicity is Critical
+
+Always use your database's transaction mechanism to ensure either ALL data is saved or NOTHING:
 
 ```typescript
-import { Database } from "better-sqlite3";
-import { Transaction, Entry, ILedgerRepository } from "hammurabi";
-
-export class SqliteLedgerRepository implements ILedgerRepository {
-  constructor(private db: Database) {}
-
-  async saveTransactional(transaction: Transaction): Promise<Transaction> {
-    return new Promise((resolve, reject) => {
-      try {
-        // Start transaction
-        const txn = this.db.transaction(() => {
-          // Insert transaction
-          this.db
-            .prepare(
-              `INSERT INTO transactions (uuid, description, timestamp)
-               VALUES (?, ?, ?)`
-            )
-            .run(transaction.uuid, transaction.description, transaction.timestamp);
-
-          // Insert entries
-          const stmt = this.db.prepare(
-            `INSERT INTO entries (transactionUuid, accountId, amount, conceptId, quantity)
-             VALUES (?, ?, ?, ?, ?)`
-          );
-
-          for (const entry of transaction.entries) {
-            stmt.run(
-              transaction.uuid,
-              entry.accountId,
-              entry.amount,
-              entry.conceptId || null,
-              entry.quantity || null
-            );
-          }
-        });
-
-        // Execute transaction
-        txn();
-        resolve(transaction);
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
+// ✓ Correct - atomic operation
+async saveTransactional(transaction: Transaction): Promise<Transaction> {
+  return this.db.transaction(async (txn) => {
+    // Save transaction
+    // Save entries
+    // If any error, everything rolls back
+  });
 }
 ```
 
-## Data Mapping
+### 2. Preserve Precision for Amounts
 
-### Transaction Mapping
-
-| Hammurabi Field | Database Column | Type | Notes |
-|-----------------|-----------------|------|-------|
-| `uuid` | `uuid` | UUID/String | Primary key, v7 format |
-| `description` | `description` | Text | Human-readable summary |
-| `timestamp` | `timestamp` | DateTime | ISO 8601 format |
-
-### Entry Mapping
-
-| Hammurabi Field | Database Column | Type | Notes |
-|-----------------|-----------------|------|-------|
-| `id` | `id` | Integer | Auto-increment, optional |
-| `accountId` | `account_id` | Integer | Foreign key to accounts |
-| `amount` | `amount` | Decimal | Debit: positive, Credit: negative |
-| `conceptId` | `concept_id` | Integer | Optional category/concept |
-| `quantity` | `quantity` | Integer | Optional quantity tracking |
-
-### Account Mapping
-
-| Hammurabi Field | Database Column | Type | Notes |
-|-----------------|-----------------|------|-------|
-| `id` | `id` | Integer | Primary key |
-| `parentId` | `parent_id` | Integer | Foreign key to parent account, null for main |
-| `name` | `name` | Text | Account name |
-| `type` | `type` | Enum/Text | ASSET, LIABILITY, EQUITY, INCOME, EXPENSE |
-
-### Important: Preserve Precision
-
-When storing amounts, use appropriate data types:
-- **Decimal/Numeric**: Best for financial data (preserves precision)
-- **Float/Double**: ⚠️ Avoid - precision loss with large numbers
-- **Integer**: Only if storing cents/smallest unit
+Use appropriate data types for financial data:
 
 ```typescript
 // Good
-amount: Decimal(15, 2)  // $999,999,999,999.99
+amount: Decimal(15, 2)   // $999,999,999,999.99
 
 // Risky
-amount: Float64  // Can lose precision
+amount: Float64          // Can lose precision
 
 // Alternative
-amount: BigInt  // Store in cents as integers
+amount: BigInt           // Store in cents
 ```
+
+### 3. Account Type Inheritance
+
+When querying sub-accounts, ensure you include parent type:
+
+```typescript
+async getSubAccountsOfType(parentId: number) {
+  // Get parent
+  const parent = await this.findById(parentId);
+  
+  // Query children - they inherit parent's type
+  return this.db.query(
+    "SELECT * FROM accounts WHERE parent_id = ?",
+    [parentId]
+  ).map(row => ({
+    ...row,
+    type: parent.type  // Ensure type matches parent
+  }));
+}
+```
+
+---
 
 ## Testing Your Implementation
 
@@ -479,7 +329,7 @@ Verify your repository works correctly:
 import Hammurabi, { Entry } from "hammurabi";
 
 // 1. Configure
-const dbContext = new MyDbContext();
+const dbContext = new PrismaDbContext(prisma);
 Hammurabi.configure(dbContext);
 
 // 2. Create and commit a transaction
@@ -492,20 +342,53 @@ const entries = [
 ledger.startTransaction("Test transaction", entries);
 const saved = await ledger.commit();
 
-console.log("✓ Saved transaction:", saved.uuid);
+console.log("✓ Transaction saved:", saved.uuid);
 
-// 3. Verify data in database
-const queryResult = await db.query(
-  "SELECT * FROM transactions WHERE uuid = ?",
-  [saved.uuid]
-);
+// 3. Verify in database
+const result = await prisma.transaction.findUnique({
+  where: { uuid: saved.uuid },
+  include: { entries: true }
+});
 
-console.log("✓ Found in database:", queryResult.rows.length > 0);
+console.log("✓ Found in database:", result !== null);
+console.log(`  Entries: ${result.entries.length}`);
 ```
+
+---
+
+## Field Mapping Reference
+
+### Transaction → Database
+
+| Hammurabi | Database | Type |
+|-----------|----------|------|
+| `uuid` | `uuid` | UUID/String |
+| `description` | `description` | Text |
+| `timestamp` | `timestamp` | DateTime |
+
+### Entry → Database
+
+| Hammurabi | Database | Type |
+|-----------|----------|------|
+| `accountId` | `account_id` | Integer |
+| `amount` | `amount` | Decimal |
+| `conceptId` | `concept_id` | Integer (nullable) |
+| `quantity` | `quantity` | Integer (nullable) |
+
+### Account → Database
+
+| Hammurabi | Database | Type |
+|-----------|----------|------|
+| `id` | `id` | Integer |
+| `parentId` | `parent_id` | Integer (nullable) |
+| `name` | `name` | Text |
+| `type` | `type` | Enum/Text |
+
+---
 
 ## Next Steps
 
-- See [USAGE.md](./USAGE.md) for how to use Hammurabi
-- See [CUSTOM_TRANSACTIONS.md](./CUSTOM_TRANSACTIONS.md) for handling custom transaction types
-- Implement your repositories following the patterns above
-- Run tests to verify data persistence
+1. Implement your repositories following the patterns above
+2. Run the testing code to verify data persistence
+3. See [USAGE.md](./USAGE.md) to start recording transactions
+4. See [CUSTOM_TRANSACTIONS.md](./CUSTOM_TRANSACTIONS.md) for handling custom transaction types
