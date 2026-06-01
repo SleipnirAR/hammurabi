@@ -24,12 +24,20 @@ transfer({
   FromId: number,           // Source account
   ToId: number,             // Destination account  
   amount: number,           // Amount to transfer
-  conceptId?: number,       // Optional: category/concept
+  conceptId?: number,       // Optional: link to product/service (see below)
   quantity?: number         // Optional: quantity
 }): Promise<[Entry, Entry]>
 ```
 
 Returns a promise with a tuple of two balanced entries: `[fromEntry, toEntry]`
+
+**About conceptId:**
+`conceptId` is optional and allows you to link entries to your product/service catalog at implementation time. For example:
+- When recording inventory movement, set `conceptId` to your product ID
+- When recording service revenue, set `conceptId` to your service ID
+- When transferring pure cash (e.g., loan payment), leave it empty
+
+This lets you track *what* moved, not just the amount. Hammurabi only requires the accounting balance; linking to your domain is your implementation choice.
 
 ### Basic Usage
 
@@ -154,7 +162,7 @@ const [invOut, cogsIn] = await helper.transfer({
   FromId: 102,        // Inventory (source)
   ToId: 201,          // COGS (destination)
   amount: 375,        // Cost of goods
-  conceptId: 1,       // Product category
+  conceptId: 42,      // Product ID from your catalog (e.g., Product ABC)
   quantity: 5         // 5 units sold
 });
 
@@ -166,16 +174,17 @@ const [revOut, cashIn] = await helper.transfer({
   FromId: 301,        // Revenue (source - credit nature)
   ToId: 101,          // Cash (destination - debit nature)
   amount: 500,        // Revenue amount
-  conceptId: 1,       // Sales category
+  conceptId: 42,      // Same product ID
   quantity: 5         // 5 units sold
 });
 
 entries.push(revOut, cashIn);
 
-// 5. Verify balance
+// 5. Verify balance (conceptId allows tracking the product link, but doesn't affect balance)
 const totalAmount = entries.reduce((sum, e) => sum + e.amount, 0);
 console.log(`Total entries: ${entries.length}`);      // 4
 console.log(`Sum of amounts: ${totalAmount}`);        // 0 ✓ (balanced)
+// All entries have conceptId: 42, linking this sale to Product ABC in your system
 
 // 6. Create and commit the transaction
 ledger.startTransaction(
@@ -418,13 +427,19 @@ ledger.rollback();
 
 ```typescript
 new Entry({
-  accountId: number,        // Required
-  amount: number,           // Required
-  conceptId?: number,       // Optional
-  quantity?: number,        // Optional
+  accountId: number,        // Required: which account
+  amount: number,           // Required: amount (+ debit, - credit)
+  conceptId?: number,       // Optional: link to product/service (your catalog)
+  quantity?: number,        // Optional: quantity
   id?: number              // Optional (database-generated)
 })
 ```
+
+**conceptId Usage:**
+- Leave empty for pure money transfers (e.g., loan payments, interest)
+- Set to your product ID when moving inventory
+- Set to your service ID when recording service revenue
+- This field is yours to use for domain linking at implementation time
 
 ---
 
