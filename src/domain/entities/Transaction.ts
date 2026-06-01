@@ -13,6 +13,7 @@ export default class Transaction {
     this.description = description;
     this.entries = entries;
     this.validateValues();
+    if (new.target === Transaction) Object.freeze(this);
   }
   readonly uuid: string;
   readonly timestamp: Date;
