@@ -6,15 +6,15 @@ export enum AccountType {
   INCOME = "INCOME"
 }
 export class Account {
-  constructor(id: number,parentId: number,  name: string, type: AccountType) {
+  constructor(id: number, name: string, type: AccountType, parentId?: number) {
     this.id = id;
-    this.parentId = parentId;
     this.name = name;
     this.type = type;
+    this.parentId = parentId;
   }
 
   id: number; 
-  parentId?: number;
   name: string;
   type: AccountType;
+  parentId?: number | undefined;
 }

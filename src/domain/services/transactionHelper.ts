@@ -12,7 +12,7 @@ interface TransferInput {
   ToId: number;
   amount: number;
   conceptId?: number | undefined;
-  quantity: number;
+  quantity?: number | undefined;
 }
 
 export default class TransactionHelper {
