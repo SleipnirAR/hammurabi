@@ -51,24 +51,18 @@ export default class TransactionHelper {
     if (!fromAccount) throw new Error(`Origin account not found: ${FromId}`);
     if (!toAccount) throw new Error(`Destination account not found: ${ToId}`);
 
-    const fromNature = this.getNature(fromAccount.type);
-    const fromAmount = fromNature === Nature.Debit ? -amount : amount;
-    const fromQty = fromNature === Nature.Debit ? -quantity : quantity;
-
-    const toNature = this.getNature(toAccount.type);
-    const toAmount = toNature === Nature.Debit ? amount : -amount;
-    const toQty = toNature === Nature.Debit ? quantity : -quantity;
-
+    // From = Credit
     const entryFrom = new Entry({
       accountId: fromAccount.id,
-      amount: fromAmount,
-      ...(conceptId !== undefined && { quantity: fromQty, conceptId }),
+      amount: -amount,
+      ...(conceptId !== undefined && { quantity: -quantity, conceptId }),
     });
 
+    // To = Debit
     const entryTo = new Entry({
       accountId: toAccount.id,
-      amount: toAmount,
-      ...(conceptId !== undefined && { quantity: toQty, conceptId }),
+      amount: amount,
+      ...(conceptId !== undefined && { quantity: quantity, conceptId }),
     });
 
     return [entryFrom, entryTo];
