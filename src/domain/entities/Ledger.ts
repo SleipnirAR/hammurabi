@@ -22,7 +22,10 @@ export class Ledger {
    * @param entries - The journal entries that make up this transaction
    * @throws If the entries are invalid or do not sum to zero
    */
-  startTransaction(transactionDescription: string, entries: Entry[]): void;
+  startTransaction(
+    transactionDescription: string,
+    entries: Entry[],
+  ): Transaction;
   /**
    * Begins a new transaction with an existing Transaction instance.
    * Automatically verifies that the entries are balanced (sum to zero).
@@ -31,11 +34,11 @@ export class Ledger {
    * @param transaction - A complete Transaction instance (useful for custom Transaction subclasses)
    * @throws If the transaction is invalid or entries do not sum to zero
    */
-  startTransaction(transaction: Transaction): void;
+  startTransaction(transaction: Transaction): Transaction;
   startTransaction(
     descOrTx: string | Transaction,
     entries?: Entry[],
-  ): void {
+  ): Transaction {
     try {
       if (typeof descOrTx === "string") {
         this.transaction = new Transaction(descOrTx, entries!);
@@ -43,6 +46,7 @@ export class Ledger {
         this.transaction = descOrTx;
       }
       this.verifyTransaction();
+      return this.transaction;
     } catch (error) {
       this.rollback();
       throw error;
